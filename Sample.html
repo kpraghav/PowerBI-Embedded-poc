@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Power BI Simulated Edit Mode</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/powerbi-client@2.22.0/dist/powerbi.min.js"></script>
+    <style>
+        #reportContainer {
+            height: 800px;
+            width: 100%;
+            border: 1px solid #ccc;
+        }
+        #editButton {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background-color: #0078d4;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #editButton:hover {
+            background-color: #005a9e;
+        }
+    </style>
+</head>
+<body>
+    <h2>Power BI Report - View → Edit Simulation</h2>
+    <div id="reportContainer"></div>
+    <button id="editButton">Switch to Edit Mode</button>
+
+    <script>
+        var models = window['powerbi-client'].models;
+        var powerbiService = new powerbi.service.Service(
+            powerbi.factories.hpmFactory,
+            powerbi.factories.wpmpFactory,
+            powerbi.factories.routerFactory
+        );
+
+        // ==== Replace with your Edit token details ====
+        var embedToken = "PASTE_EDIT_MODE_TOKEN_HERE";  // Single token with accessLevel: "Edit"
+        var embedUrl = "PASTE_EMBED_URL_HERE";
+        var reportId = "PASTE_REPORT_ID_HERE";
+
+        var reportContainer = $("#reportContainer")[0];
+
+        // Load initially with Fields pane hidden
+        var embedConfig = {
+            type: 'report',
+            tokenType: models.TokenType.Embed,
+            accessToken: embedToken,
+            embedUrl: embedUrl,
+            id: reportId,
+            permissions: models.Permissions.All,
+            settings: {
+                panes: {
+                    fields: { visible: false }, // start with fields hidden
+                    filters: { visible: true }
+                }
+            }
+        };
+
+        var reportInstance = powerbiService.embed(reportContainer, embedConfig);
+
+        // On button click, show the Fields pane
+        $("#editButton").click(function () {
+            reportInstance.updateSettings({
+                panes: {
+                    fields: { visible: true },
+                    filters: { visible: true }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
