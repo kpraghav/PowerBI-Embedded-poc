@@ -1,57 +1,53 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Power BI Embed Edit Mode</title>
-  <script src="https://cdn.powerbi.com/libs/powerbi-client/2.19.0/powerbi.min.js"></script>
+  <title>Power BI Edit Mode</title>
+  <script src="https://cdn.jsdelivr.net/npm/powerbi-client@2.19.1/dist/powerbi.min.js"></script>
   <style>
     #reportContainer {
-      width: 100%;
       height: 600px;
+      width: 100%;
       border: 1px solid #ccc;
-      margin-bottom: 10px;
+    }
+    #editButton {
+      margin-top: 20px;
     }
   </style>
 </head>
 <body>
 
-  <h2>Power BI Report Embed</h2>
-
+  <h2>Power BI Report Viewer</h2>
   <div id="reportContainer"></div>
-
-  <button onclick="embedReport()">Switch to Edit Mode</button>
+  <button id="editButton">Switch to Edit Mode</button>
 
   <script>
-    // These values should come from your backend or POC settings
-    const accessToken = "YOUR_EDIT_MODE_EMBED_TOKEN";
-    const embedUrl = "YOUR_EMBED_URL";
-    const reportId = "YOUR_REPORT_ID";
+    const embedToken = "<PUT_YOUR_EMBED_TOKEN_HERE>";
+    const embedUrl = "<PUT_YOUR_EMBED_URL_HERE>";
+    const reportId = "<PUT_YOUR_REPORT_ID_HERE>";
 
-    function embedReport() {
-      const models = window['powerbi-client'].models;
-
-      const config = {
-        type: 'report',
-        tokenType: models.TokenType.Embed,
-        accessToken: accessToken,
-        embedUrl: embedUrl,
-        id: reportId,
-        permissions: models.Permissions.All, // Required for Edit Mode
-        viewMode: models.ViewMode.Edit,      // <- This is the Edit Mode
-        settings: {
-          panes: {
-            filters: {
-              visible: true
-            },
-            pageNavigation: {
-              visible: true
-            }
-          }
+    // Initial load in view mode
+    const config = {
+      type: 'report',
+      tokenType: powerbi.models.TokenType.Embed,
+      accessToken: embedToken,
+      embedUrl: embedUrl,
+      id: reportId,
+      permissions: powerbi.models.Permissions.All,
+      viewMode: powerbi.models.ViewMode.View,
+      settings: {
+        panes: {
+          filters: { visible: false },
+          pageNavigation: { visible: true }
         }
-      };
+      }
+    };
 
-      const reportContainer = document.getElementById('reportContainer');
-      powerbi.embed(reportContainer, config);
-    }
+    const reportContainer = document.getElementById('reportContainer');
+    let report = powerbi.embed(reportContainer, config);
+
+    document.getElementById('editButton').addEventListener('click', () => {
+      report.switchMode(powerbi.models.ViewMode.Edit);
+    });
   </script>
 
 </body>
