@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Power BI Embedded Report Editor</title>
+    <script src="https://cdn.jsdelivr.net/npm/powerbi-client@2.19.1/dist/powerbi.min.js"></script>
+    <style>
+        #reportContainer {
+            height: 600px;
+            width: 100%;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+        }
+
+        button {
+            margin: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Power BI Embedded Report - Edit Mode</h2>
+
+    <div id="reportContainer"></div>
+
+    <button onclick="editReport()">Edit</button>
+    <button onclick="saveReport()">Save</button>
+    <button onclick="saveAsReport()">Save As</button>
+
+    <script>
+        // REPLACE with your actual values
+        const embedToken = "<YOUR_EMBED_TOKEN>";
+        const embedUrl = "<YOUR_EMBED_URL>";
+        const reportId = "<YOUR_REPORT_ID>";
+        const groupId = "<YOUR_WORKSPACE_ID>";
+
+        let report;
+
+        const models = window['powerbi-client'].models;
+
+        // Load report initially in EDIT mode
+        function loadReportInEditMode() {
+            const embedConfig = {
+                type: 'report',
+                tokenType: models.TokenType.Embed,
+                accessToken: embedToken,
+                embedUrl: embedUrl,
+                id: reportId,
+                permissions: models.Permissions.All,
+                viewMode: models.ViewMode.Edit,
+                settings: {
+                    panes: {
+                        filters: {
+                            visible: true
+                        },
+                        pageNavigation: {
+                            visible: true
+                        }
+                    }
+                }
+            };
+
+            const reportContainer = document.getElementById('reportContainer');
+            powerbi.reset(reportContainer); // Reset previous report
+            report = powerbi.embed(reportContainer, embedConfig);
+        }
+
+        function editReport() {
+            if (report) {
+                report.switchMode("edit").catch(error => console.error(error));
+            }
+        }
+
+        function saveReport() {
+            if (report) {
+                report.save()
+                    .then(response => {
+                        alert("Report saved successfully.");
+                        console.log(response);
+                    })
+                    .catch(error => {
+                        console.error("Save failed", error);
+                        alert("Error saving report.");
+                    });
+            }
+        }
+
+        function saveAsReport() {
+            if (report) {
+                const saveAsParameters = {
+                    name: "My New Report " + new Date().toLocaleString()
+                };
+
+                report.saveAs(saveAsParameters)
+                    .then(response => {
+                        alert("Report saved as new successfully.");
+                        console.log(response);
+                    })
+                    .catch(error => {
+                        console.error("Save As failed", error);
+                        alert("Error saving new report.");
+                    });
+            }
+        }
+
+        // Initial load
+        loadReportInEditMode();
+    </script>
+</body>
+</html>
