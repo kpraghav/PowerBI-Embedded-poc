@@ -1,1 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>RDL Self-Service Editor — Full</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    body { font-family: Inter, Roboto, Arial, sans-serif; padding: 18px; line-height:1.4; }
+    h1 { margin-bottom: 8px; }
+    .card { border:1px solid #e6e9ee; border-radius:8px; padding:12px; margin-bottom:12px; background:#fff; }
+    label { font-weight:600; }
+    select,input[type=text],textarea { width:100%; padding:8px; box-sizing:border-box; margin-top:6px; }
+    textarea { font-family: monospace; min-height:120px; }
+    table { border-collapse:collapse; width:100%; margin-top:8px; }
+    th,td { border:1px solid #dfe6ef; padding:8px; text-align:left; }
+    th { background:#f7fafc; }
+    .flex { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .btn { padding:8px 12px; border-radius:6px; border:0; background:#0b74de; color:#fff; cursor:pointer; }
+    .btn.secondary { background:#64748b; }
+    .btn.danger { background:#ef4444; }
+    .muted { color:#6b7280; font-size:0.92em; }
+    .small { font-size:0.9em; color:#475569; }
+    .hidden { display:none; }
+    .previewWrap { overflow:auto; max-height:420px; border:1px dashed #e2e8f0; padding:8px; margin-top:8px; }
+    input.inline { width:auto; display:inline-block; }
+  </style>
+</head>
+<body>
+  <h1>RDL Self-Service Editor — Full Prototype</h1>
+  <p class="muted">Upload an RDL, edit datasets/parameters/tablix (headers & detail expressions), then generate a new .rdl.</p>
 
+  <div class="card">
+    <label>Upload .rdl file</label>
+    <input id="fileInput" type="file" accept=".rdl,.xml"/>
+    <div id="fileInfo" class="muted" style="margin-top:8px"></div>
+  </div>
+
+  <div id="workspace" class="hidden">
+    <div class="card">
+      <h3>Datasets</h3>
+      <div class="flex">
+        <select id="datasetList"></select>
+        <button class="btn" id="datasetLoad">Load</button>
+        <button class="btn secondary" id="datasetSave">Save</button>
+      </div>
+      <div id="datasetEditor" class="hidden" style="margin-top:8px;">
+        <label>CommandText (SQL / Query)</label>
+        <textarea id="datasetCommand"></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Parameters</h3>
+      <div class="muted small">Edit report parameters (basic editing of default value / prompt). For advanced parameter types extend the code.</div>
+      <div id="paramsArea" style="margin-top:8px;"></div>
+      <div style="margin-top:8px;"><button class="btn" id="applyParams">Apply Parameters</button></div>
+    </div>
+
+    <div class="card">
+      <h3>Tablix Editor</h3>
+      <div class="flex" style="align-items:center;">
+        <label style="min-width:90px;">Select Tablix</label>
+        <select id="tablixList"></select>
+        <label style="min-width:90px;">Header Row</label>
+        <select id="headerRowIdx"></select>
+        <label style="min-width:90px;">Detail Row</label>
+        <select id="detailRowIdx"></select>
+        <button class="btn" id="loadTablix">Load</button>
+      </div>
+
+      <div id="tablixControls" class="hidden" style="margin-top:10px;">
+        <div class="muted small">Edit header labels and detail expressions. Use <strong>Add Column</strong> or <strong>Remove Last Column</strong> to change column count. Click <strong>Apply to XML</strong> to write changes to the RDL (or click Generate to auto-apply).</div>
+        <div class="flex" style="margin-top:8px;">
+          <button class="btn" id="addColumn">Add Column</button>
+          <button class="btn danger" id="removeColumn">Remove Last Column</button>
+          <button class="btn secondary" id="applyTablixBtn">Apply to XML</button>
+          <button class="btn" id="refreshTablixBtn">Refresh</button>
+        </div>
+
+        <div id="tablixPreview" class="previewWrap"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Generate / Download</h3>
+      <div class="flex">
+        <input id="outputFileName" type="text" placeholder="Modified_Report.rdl" value="Modified_Report.rdl"/>
+        <button class="btn" id="generateBtn">Generate &amp; Download RDL</button>
+        <button class="btn secondary" id="downloadPreviewBtn">Download XML Preview</button>
+      </div>
+      <div id="status" class="muted" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+<script>
+/*
+  RDL Self-Service Editor - Full
+  - Namespace-aware (uses localName checks)
+  - Deterministic updates: recreates TablixColumns and TablixCells for the rows being edited
+  - Editable preview uses simple header+detail mapping
+  - Designed to be a robust browser-side prototype. For production:
+    - Validate against RDL XSD server-side
+    - Add server-side upload endpoint with authentication
+    - Add unit/integration tests and backup/versioning
+*/
+
+let xmlDoc = null;
+const parser = new DOMParser();
+const serializer = new XMLSerializer();
+
+// Helpers
+function log(msg, isError=false) {
+  $('#status').text(msg).css('color', isError ? 'red' : '#111');
+}
+function elLocalName(n) { return n ? n.localName : null; }
+function getAllByLocalName(root, name) {
+  const out = [];
+  if (!root) return out;
+  const all = root.getElementsByTagName('*');
+  for (let i=0;i<all.length;i++) if (all[i].localName === name) out.push(all[i]);
+  return out;
+}
+function findChildByLocalName(parent, name) {
+  if (!parent) return null;
+  for (let i=0;i<parent.childNodes.length;i++) {
+    const c = parent.childNodes[i];
+    if (c.nodeType === 1 && c.localName === name) return c;
+  }
+  return null;
+}
+function createEl(name) {
+  const ns = xmlDoc && xmlDoc.documentElement && xmlDoc.documentElement.namespaceURI;
+  return ns ? xmlDoc.createElementNS(ns, name) : xmlDoc.createElement(name);
+}
+function createTextNode(text) { return xmlDoc.createTextNode(text); }
+function safeText(el) { return el ? (el.textContent || '') : ''; }
+
+// File upload
+$('#fileInput').on('change', function(e){
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      xmlDoc = parser.parseFromString(ev.target.result, 'application/xml');
+      if (xmlDoc.getElementsByTagName('parsererror').length) {
+        alert('XML parse error. Ensure the file is a valid RDL/XML.');
+        return;
+      }
+      $('#fileInfo').text(`${file.name} (${file.size} bytes)`);
+      $('#workspace').removeClass('hidden');
+      populateDatasets();
+      populateParameters();
+      populateTablixes();
+      log('RDL parsed successfully.');
+    } catch (ex) {
+      console.error(ex);
+      alert('Failed to parse RDL: ' + ex.message);
+    }
+  };
+  reader.readAsText(file);
+});
+
+// ------------------ DATASETS ------------------
+function populateDatasets() {
+  $('#datasetList').empty();
+  const datasets = getAllByLocalName(xmlDoc, 'DataSet');
+  if (!datasets.length) {
+    $('#datasetList').append($('<option>').text('No DataSet found'));
+    $('#datasetEditor').addClass('hidden');
+    return;
+  }
+  datasets.forEach((ds, idx) => {
+    const name = ds.getAttribute('Name') || `DataSet_${idx}`;
+    $('#datasetList').append($('<option>').val(idx).text(name));
+  });
+}
+$('#datasetLoad').on('click', function(){
+  const idx = parseInt($('#datasetList').val());
+  const datasets = getAllByLocalName(xmlDoc, 'DataSet');
+  const ds = datasets[idx];
+  if (!ds) { alert('No dataset selected'); return; }
+  const query = findChildByLocalName(ds, 'Query');
+  const cmd = query ? findChildByLocalName(query, 'CommandText') : null;
+  $('#datasetEditor').removeClass('hidden');
+  $('#datasetCommand').val(cmd ? safeText(cmd) : '');
+  log('Dataset loaded for editing.');
+});
+$('#datasetSave').on('click', function(){
+  const idx = parseInt($('#datasetList').val());
+  const datasets = getAllByLocalName(xmlDoc, 'DataSet');
+  const ds = datasets[idx];
+  if (!ds) { alert('No dataset selected'); return; }
+  let query = findChildByLocalName(ds, 'Query');
+  if (!query) { query = createEl('Query'); ds.appendChild(query); }
+  let cmd = findChildByLocalName(query, 'CommandText');
+  if (!cmd) { cmd = createEl('CommandText'); query.appendChild(cmd); }
+  // clear existing children
+  while (cmd.firstChild) cmd.removeChild(cmd.firstChild);
+  cmd.appendChild(createTextNode($('#datasetCommand').val()));
+  log('CommandText updated in XML.');
+});
+
+// ------------------ PARAMETERS ------------------
+function populateParameters() {
+  $('#paramsArea').empty();
+  const params = getAllByLocalName(xmlDoc, 'ReportParameter');
+  if (!params.length) { $('#paramsArea').html('<div class="muted">No ReportParameters found</div>'); return; }
+  params.forEach((p, i) => {
+    const name = p.getAttribute('Name') || `Param_${i}`;
+    const prompt = safeText(findChildByLocalName(p,'Prompt'));
+    // Get default value (if present under DefaultValue > Values > Value)
+    let defaultValue = '';
+    const dv = findChildByLocalName(p, 'DefaultValue');
+    if (dv) {
+      const vals = getAllByLocalName(dv, 'Value');
+      if (vals.length) defaultValue = safeText(vals[0]);
+    }
+    const $div = $('<div>').css('margin-bottom','8px');
+    $div.append(`<label>${name} — Prompt</label>`);
+    $div.append(`<input type="text" class="paramPrompt" data-param="${i}" value="${prompt}">`);
+    $div.append(`<label style="margin-top:6px">Default Value</label>`);
+    $div.append(`<input type="text" class="paramDefault" data-param="${i}" value="${defaultValue}">`);
+    $('#paramsArea').append($div);
+  });
+}
+$('#applyParams').on('click', function(){
+  const params = getAllByLocalName(xmlDoc, 'ReportParameter');
+  params.forEach((p, i) => {
+    const promptVal = $(`.paramPrompt[data-param='${i}']`).val() || '';
+    const defVal = $(`.paramDefault[data-param='${i}']`).val() || '';
+    // Prompt
+    let promptEl = findChildByLocalName(p,'Prompt');
+    if (!promptEl) { promptEl = createEl('Prompt'); p.appendChild(promptEl); }
+    while (promptEl.firstChild) promptEl.removeChild(promptEl);
+    promptEl.appendChild(createTextNode(promptVal));
+    // DefaultValue -> Values -> Value (overwrite first value)
+    let dv = findChildByLocalName(p,'DefaultValue');
+    if (!dv) { dv = createEl('DefaultValue'); p.appendChild(dv); }
+    let vals = findChildByLocalName(dv,'Values');
+    if (!vals) { vals = createEl('Values'); dv.appendChild(vals); }
+    // remove existing values and add one
+    while (vals.firstChild) vals.removeChild(vals.firstChild);
+    const v = createEl('Value'); v.appendChild(createTextNode(defVal));
+    vals.appendChild(v);
+  });
+  log('Parameters applied to XML.');
+});
+
+// ------------------ TABLIX ------------------
+function populateTablixes() {
+  $('#tablixList').empty();
+  const tablixes = getAllByLocalName(xmlDoc, 'Tablix');
+  if (!tablixes.length) {
+    $('#tablixList').append($('<option>').text('No Tablix found'));
+    return;
+  }
+  tablixes.forEach((t, idx) => {
+    const name = t.getAttribute('Name') || `Tablix_${idx}`;
+    $('#tablixList').append($('<option>').val(idx).text(name));
+  });
+}
+$('#loadTablix').on('click', function(){
+  const tIdx = parseInt($('#tablixList').val());
+  const tablixes = getAllByLocalName(xmlDoc, 'Tablix');
+  const t = tablixes[tIdx];
+  if (!t) { alert('Tablix not found'); return; }
+
+  // find TablixRows immediate children
+  let rowsParent = findChildByLocalName(t, 'TablixRows');
+  const rows = [];
+  if (rowsParent) {
+    for (let i=0;i<rowsParent.childNodes.length;i++){
+      const n = rowsParent.childNodes[i];
+      if (n.nodeType===1 && n.localName === 'TablixRow') rows.push(n);
+    }
+  }
+
+  // populate header/detail row selects with available row count (also allow editing beyond current rows)
+  $('#headerRowIdx').empty(); $('#detailRowIdx').empty();
+  const count = Math.max(2, rows.length);
+  for (let i=0;i<count;i++){
+    $('#headerRowIdx').append($('<option>').val(i).text('Row ' + i));
+    $('#detailRowIdx').append($('<option>').val(i).text('Row ' + i));
+  }
+  $('#headerRowIdx').val(0);
+  $('#detailRowIdx').val(rows.length>1 ? 1 : 0);
+
+  // render preview
+  renderTablixPreview(tIdx, parseInt($('#headerRowIdx').val()), parseInt($('#detailRowIdx').val()));
+  $('#tablixControls').removeClass('hidden');
+  log('Tablix loaded for preview/edit.');
+});
+
+function renderTablixPreview(tIdx, headerIdx, detailIdx) {
+  $('#tablixPreview').empty();
+  const tablixes = getAllByLocalName(xmlDoc, 'Tablix');
+  const t = tablixes[tIdx];
+  if (!t) return;
+
+  // col count from TablixColumns or header/detail cells
+  const colNodes = getAllByLocalName(t, 'TablixColumn');
+  let colCount = colNodes.length;
+
+  // extract rows
+  const rowsParent = findChildByLocalName(t,'TablixRows');
+  const rowList = [];
+  if (rowsParent) {
+    for (let i=0;i<rowsParent.childNodes.length;i++){
+      const n = rowsParent.childNodes[i];
+      if (n.nodeType===1 && n.localName === 'TablixRow') rowList.push(n);
+    }
+  }
+
+  function cellsFromRow(idx) {
+    if (!rowList[idx]) return [];
+    const cp = findChildByLocalName(rowList[idx],'TablixCells');
+    const out = [];
+    if (!cp) return out;
+    for (let i=0;i<cp.childNodes.length;i++){
+      const n = cp.childNodes[i];
+      if (n.nodeType===1 && n.localName === 'TablixCell') out.push(n);
+    }
+    return out;
+  }
+
+  const headerCells = cellsFromRow(headerIdx);
+  const detailCells = cellsFromRow(detailIdx);
+  colCount = Math.max(colCount, headerCells.length, detailCells.length, 1);
+
+  const $table = $('<table>').attr('id','previewTable');
+  const $thead = $('<thead>');
+  const $htr = $('<tr>');
+  for (let c=0;c<colCount;c++){
+    let headerText = '';
+    if (headerCells[c]) {
+      const tb = getAllByLocalName(headerCells[c],'Textbox')[0];
+      const val = tb ? getAllByLocalName(tb,'Value')[0] : null;
+      headerText = val ? safeText(val) : '';
+    }
+    const $th = $('<th>');
+    $th.append($('<input>').attr('type','text').addClass('colHeader').attr('data-col',c).val(headerText));
+    $htr.append($th);
+  }
+  $thead.append($htr); $table.append($thead);
+
+  const $tbody = $('<tbody>');
+  const $dtr = $('<tr>');
+  for (let c=0;c<colCount;c++){
+    let expr = '';
+    if (detailCells[c]) {
+      const tb = getAllByLocalName(detailCells[c],'Textbox')[0];
+      const val = tb ? getAllByLocalName(tb,'Value')[0] : null;
+      expr = val ? safeText(val) : '';
+    }
+    const $td = $('<td>');
+    $td.append($('<input>').attr('type','text').addClass('colDetail').attr('data-col',c).val(expr));
+    $dtr.append($td);
+  }
+  $tbody.append($dtr); $table.append($tbody);
+
+  $('#tablixPreview').append($table);
+}
+
+$('#addColumn').on('click', function(){
+  const $table = $('#previewTable');
+  if (!$table.length) return alert('Load a tablix first.');
+  const newIndex = $table.find('thead th').length;
+  $table.find('thead tr').append($('<th>').append($('<input>').attr('type','text').addClass('colHeader').attr('data-col',newIndex).val('Column_' + (newIndex+1))));
+  $table.find('tbody tr').append($('<td>').append($('<input>').attr('type','text').addClass('colDetail').attr('data-col',newIndex).val('=Fields!Field' + (newIndex+1) + '.Value')));
+  log('Added a column to preview. Click Apply to update RDL.');
+});
+$('#removeColumn').on('click', function(){
+  const $table = $('#previewTable');
+  if (!$table.length) return;
+  const cols = $table.find('thead th').length;
+  if (cols <= 1) return alert('At least one column must remain.');
+  $table.find('thead th').last().remove();
+  $table.find('tbody td').last().remove();
+  log('Removed last column from preview. Click Apply to update RDL.');
+});
+$('#refreshTablixBtn').on('click', function(){
+  $('#loadTablix').click();
+});
+
+// Apply preview edits to XML
+$('#applyTablixBtn').on('click', function(){
+  const tIdx = parseInt($('#tablixList').val());
+  const headerIdx = parseInt($('#headerRowIdx').val());
+  const detailIdx = parseInt($('#detailRowIdx').val());
+  const ok = applyPreviewToXml(tIdx, headerIdx, detailIdx);
+  if (ok) log('Tablix changes applied to XML.');
+});
+
+// Core function: apply preview to XML deterministically
+function applyPreviewToXml(tIdx, headerIdx, detailIdx) {
+  const tablixes = getAllByLocalName(xmlDoc, 'Tablix');
+  const t = tablixes[tIdx];
+  if (!t) { alert('Tablix not found'); return false; }
+  const $table = $('#previewTable');
+  if (!$table.length) { alert('No preview loaded'); return false; }
+
+  const headers = []; const details = [];
+  $table.find('.colHeader').each(function(){ headers.push($(this).val() || ''); });
+  $table.find('.colDetail').each(function(){ details.push($(this).val() || ''); });
+  const count = headers.length;
+
+  // Ensure TablixColumns exists
+  let colsParent = findChildByLocalName(t, 'TablixColumns');
+  if (!colsParent) {
+    colsParent = createEl('TablixColumns');
+    const ref = findChildByLocalName(t, 'TablixRowHierarchy') || findChildByLocalName(t, 'TablixRows') || null;
+    if (ref) t.insertBefore(colsParent, ref); else t.appendChild(colsParent);
+  }
+  // Recreate all TablixColumn elements
+  while (colsParent.firstChild) colsParent.removeChild(colsParent.firstChild);
+  for (let i=0;i<count;i++){
+    const col = createEl('TablixColumn');
+    const width = createEl('Width'); width.appendChild(createTextNode('1in'));
+    col.appendChild(width);
+    colsParent.appendChild(col);
+  }
+
+  // Ensure TablixRows exists and enough rows
+  let rowsParent = findChildByLocalName(t, 'TablixRows');
+  if (!rowsParent) { rowsParent = createEl('TablixRows'); t.appendChild(rowsParent); }
+  // Collect existing row nodes (immediate children)
+  const existingRows = [];
+  for (let i=0;i<rowsParent.childNodes.length;i++){
+    const n = rowsParent.childNodes[i];
+    if (n.nodeType===1 && n.localName === 'TablixRow') existingRows.push(n);
+  }
+  const needRows = Math.max(headerIdx+1, detailIdx+1);
+  while (existingRows.length < needRows) {
+    const newRow = createEl('TablixRow');
+    const cells = createEl('TablixCells');
+    newRow.appendChild(cells);
+    rowsParent.appendChild(newRow);
+    existingRows.push(newRow);
+  }
+
+  // Helper to ensure a given row has exactly count TablixCell children (recreated)
+  function ensureCells(row) {
+    let cp = findChildByLocalName(row, 'TablixCells');
+    if (!cp) { cp = createEl('TablixCells'); row.appendChild(cp); }
+    while (cp.firstChild) cp.removeChild(cp.firstChild);
+    for (let i=0;i<count;i++){
+      const cell = createEl('TablixCell');
+      const cc = createEl('CellContents');
+      cell.appendChild(cc);
+      cp.appendChild(cell);
+    }
+    return cp;
+  }
+
+  // Apply header
+  const headerRow = existingRows[headerIdx];
+  const headerCp = ensureCells(headerRow);
+  for (let i=0;i<count;i++){
+    const cell = headerCp.childNodes[i];
+    const cc = findChildByLocalName(cell, 'CellContents');
+    while (cc.firstChild) cc.removeChild(cc.firstChild);
+    const tb = createEl('Textbox'); tb.setAttribute('Name', 'Header_' + (i+1));
+    const val = createEl('Value'); val.appendChild(createTextNode(headers[i] || ''));
+    tb.appendChild(val); cc.appendChild(tb);
+  }
+
+  // Apply detail
+  const detailRow = existingRows[detailIdx];
+  const detailCp = ensureCells(detailRow);
+  for (let i=0;i<count;i++){
+    const cell = detailCp.childNodes[i];
+    const cc = findChildByLocalName(cell, 'CellContents');
+    while (cc.firstChild) cc.removeChild(cc.firstChild);
+    const tb = createEl('Textbox'); tb.setAttribute('Name', 'Detail_' + (i+1));
+    const val = createEl('Value'); val.appendChild(createTextNode((details[i] && details[i].trim()) ? details[i] : ('=Fields!Field' + (i+1) + '.Value')));
+    tb.appendChild(val); cc.appendChild(tb);
+  }
+
+  return true;
+}
+
+// ------------------ GENERATE & DOWNLOAD ------------------
+$('#generateBtn').on('click', function(){
+  if (!xmlDoc) return alert('Load an RDL first');
+
+  // Save dataset edits if editor open
+  try {
+    const dsIdx = parseInt($('#datasetList').val());
+    if (!isNaN(dsIdx) && $('#datasetEditor').is(':visible')) {
+      $('#datasetSave').click();
+    }
+  } catch(e) { /* continue */ }
+
+  // Apply current tablix preview if present
+  if ($('#previewTable').length) {
+    const tIdx = parseInt($('#tablixList').val());
+    const h = parseInt($('#headerRowIdx').val());
+    const d = parseInt($('#detailRowIdx').val());
+    applyPreviewToXml(tIdx, h, d);
+  }
+
+  // Apply parameters edits
+  $('#applyParams').click();
+
+  let xmlStr = serializer.serializeToString(xmlDoc);
+  if (!xmlStr.startsWith('<?xml')) xmlStr = '<?xml version="1.0" encoding="utf-8"?>\n' + xmlStr;
+
+  const blob = new Blob([xmlStr], { type: 'application/xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const out = ($('#outputFileName').val().trim() || 'Modified_Report.rdl');
+  a.download = out;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  log('Generated and downloaded: ' + out);
+});
+
+$('#downloadPreviewBtn').on('click', function(){
+  if (!xmlDoc) return alert('Load an RDL first');
+  let xmlStr = serializer.serializeToString(xmlDoc);
+  if (!xmlStr.startsWith('<?xml')) xmlStr = '<?xml version="1.0" encoding="utf-8"?>\n' + xmlStr;
+  const blob = new Blob([xmlStr], { type: 'application/xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'preview.xml'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  log('Downloaded XML preview.');
+});
+
+// Keep preview reactive when header/detail inputs change
+$(document).on('input', '.colHeader, .colDetail', function(){ log('Edits detected — click Apply or Generate to persist.'); });
+
+</script>
+</body>
+</html>
