@@ -1,0 +1,166 @@
+Understood. Below is the HLD document input format (architectural design content), written as formal design sections rather than recommendations.
+6. Persistent Design Considerations
+6.1 Data Persistence Architecture
+The target Power BI architecture shall establish a persistent governed data layer external to the reporting platform to ensure durability, consistency, scalability, and reusability of reporting data assets.
+WebFOCUS currently performs report-centric data processing, where business logic and transformations may reside within report procedures. In the target architecture, these transformations shall be externalized into persistent enterprise data platforms such as operational data warehouses, curated reporting schemas, lakehouse zones, or enterprise semantic repositories.
+Power BI shall function as the visualization and analytics consumption layer rather than the primary persistence layer.
+Design Considerations
+Reporting-ready datasets shall persist outside Power BI.
+Business transformations shall be centralized and reusable.
+Duplicate transformation logic across reports shall be eliminated.
+Historical reporting data shall be retained in governed storage platforms.
+6.2 Semantic Layer Persistence
+The architecture shall establish a centralized persistent semantic layer to standardize business definitions and ensure consistency across enterprise reports.
+WebFOCUS report logic often embeds KPIs, calculations, filters, and business definitions directly within report artifacts. In the target architecture, these definitions shall be externalized into reusable Power BI semantic models or enterprise semantic services.
+Persistent semantic assets shall include:
+Business measures
+KPI definitions
+Time intelligence logic
+Dimension hierarchies
+Aggregation logic
+Calculation rules
+Shared metadata definitions
+This ensures enterprise-wide consistency and reduces report-specific duplication.
+6.3 Security Persistence Architecture
+The architecture shall ensure persistent enforcement of enterprise security controls across all reporting workloads.
+Security controls shall persist independently of report implementations and integrate with enterprise identity and access management platforms.
+Persistent security constructs shall include:
+Role-based access definitions
+Row-level security policies
+Object-level security policies
+Workspace access controls
+Identity group mappings
+Service principal authorization configurations
+Security policies shall remain centrally governed and consistently applied across environments.
+6.4 Application-Level Encryption (ALE) Persistence
+Where Application-Level Encryption is implemented for sensitive data access, the architecture shall ensure that encrypted data remains persistently protected throughout the reporting lifecycle.
+Decryption shall occur only within authorized backend processing services under controlled execution contexts.
+Persistent architecture controls shall include:
+Encryption key metadata repositories
+Access authorization policies
+Decryption audit records
+Token access logs
+Policy enforcement metadata
+Decrypted sensitive data shall not be permanently persisted within:
+Power BI dataset cache
+Export artifacts
+Browser storage
+Intermediate staging repositories
+Temporary reporting datasets
+Decrypted content shall remain transient and session-scoped.
+6.5 Incremental Data Persistence
+The target architecture shall support efficient persistence and refresh of large-scale reporting datasets through incremental data management mechanisms.
+Historical data volumes migrated from WebFOCUS workloads may be substantial and unsuitable for full refresh execution.
+Persistent strategies shall include:
+Incremental refresh partitions
+Historical archive persistence
+Partitioned fact storage
+Hot/warm/cold data lifecycle management
+Refresh checkpoint persistence
+This ensures scalable refresh performance while preserving reporting history.
+6.6 Metadata Persistence
+The architecture shall maintain persistent metadata governance to support migration traceability, lineage, operational governance, and long-term maintainability.
+Persistent metadata assets shall include:
+Source-to-target report mappings
+Dataset lineage
+Field lineage
+Transformation lineage
+KPI ownership metadata
+Report ownership mappings
+Dependency relationships
+Semantic model catalog definitions
+Metadata persistence shall support governance, audit, troubleshooting, and future modernization initiatives.
+6.7 Audit and Compliance Persistence
+The architecture shall persist operational and security audit records to satisfy regulatory, operational, and governance requirements.
+Persistent audit data shall include:
+Report access events
+Dataset refresh execution history
+Query execution activity
+Data export activity
+Authentication events
+Authorization decisions
+Decryption invocation history
+Gateway access activity
+Administrative changes
+Audit persistence shall support regulatory controls including PCI, GDPR, SOX, and enterprise internal compliance policies.
+6.8 Reporting Cache Persistence
+The architecture shall explicitly define dataset persistence behavior based on Power BI consumption mode.
+Persistence behavior shall vary by operational model:
+Import Mode
+Data persisted within Power BI managed dataset storage
+Cached copies maintained for analytical performance
+DirectQuery Mode
+No business data persisted within Power BI
+Source systems remain the system of record
+Composite Mode
+Hybrid persistence combining cached and live-query execution
+Persistence decisions shall align with performance, compliance, and data freshness objectives.
+6.9 Reporting Artifact Persistence
+All report development assets shall be persistently governed under enterprise lifecycle management controls.
+Persistent artifacts shall include:
+PBIX report definitions
+Semantic model definitions
+DAX logic
+Deployment configurations
+Environment parameter definitions
+Workspace deployment metadata
+Access configurations
+Artifacts shall be maintained through version-controlled repositories and governed deployment pipelines.
+6.10 Disaster Recovery Persistence
+The architecture shall ensure persistence of critical reporting platform assets to support disaster recovery and business continuity objectives.
+Persisted recovery assets shall include:
+Semantic model configurations
+Deployment artifacts
+Gateway configurations
+Authentication configurations
+Environment parameters
+Security policies
+ALE service configurations
+Key management integrations
+Recovery architecture shall support restoration following:
+Platform outage
+Regional service failure
+Configuration corruption
+Gateway failure
+Security rollback events
+6.11 Gateway Persistence Architecture
+For on-premises or hybrid data connectivity, gateway infrastructure shall be designed for persistent high availability and operational continuity.
+Persistent gateway design shall include:
+Gateway clustering
+Configuration persistence
+Credential vault integration
+Failover routing
+Monitoring telemetry persistence
+Operational event logging
+Single-node gateway dependency shall be avoided.
+6.12 Environment Persistence Isolation
+The architecture shall maintain strict persistence isolation between development, test, staging, and production environments.
+Persisted environment-specific assets shall include:
+Semantic models
+Workspace configurations
+Credentials
+Security policies
+Gateway configurations
+Parameter definitions
+API integrations
+Cross-environment shared mutable dependencies shall be prohibited.
+6.13 Performance Optimization Persistence
+The architecture shall persist performance optimization structures to support enterprise-scale analytical workloads.
+Persistent optimization structures may include:
+Aggregation tables
+Materialized views
+Reporting marts
+Indexed summary tables
+Partition definitions
+Precomputed reporting datasets
+This ensures sustainable performance for migrated WebFOCUS workloads with high data volumes.
+6.14 Session and Access State Persistence
+For embedded reporting or service-integrated architectures, user access context shall be persistently governed for secure session continuity.
+Persistent session-related controls shall include:
+Access token lifecycle metadata
+Refresh token governance
+Session audit records
+User access context mappings
+API authorization state
+Session persistence shall comply with enterprise security standards.
+This is HLD-ready wording suitable to paste directly under the “Persistent Design Considerations” section of your architecture document.
